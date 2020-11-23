@@ -7052,7 +7052,7 @@ class TCPDF {
 			// GD image handler function
 			$gdfunction = 'imagecreatefrom'.$type;
 			$info = false;
-			if ((method_exists('TCPDF_IMAGES', $mtd)) AND (!($resize AND (function_exists($gdfunction) OR extension_loaded('imagick'))))) {
+			if ((method_exists('TCPDF_IMAGES', $mtd)) AND (!($resize AND (function_exists($gdfunction) OR extension_loaded('imagick') OR class_exists('Gmagick'))))) {
 				// TCPDF image functions
 				$info = TCPDF_IMAGES::$mtd($file);
 				if (($ismask === false) AND ($imgmask === false) AND (strpos($file, '__tcpdf_'.$this->file_id.'_imgmask_') === FALSE)
@@ -7268,6 +7268,36 @@ class TCPDF {
 		$tempfile_alpha = K_PATH_CACHE.'__tcpdf_'.$this->file_id.'_imgmask_alpha_'.$filehash;
 		$parsed = false;
 		$parse_error = '';
+		// Gmagick
+        if (class_exists("Gmagick")) {
+            try {
+                // GraphicsMagick library
+                $img = new Gmagick();
+                $img->readimage($file);
+                // clone image object
+                /** @var Gmagick $imga */
+                $imga = TCPDF_STATIC::objclone($img);
+                // Get opacity channel (negative of alpha channel)
+                $imga->separateimagechannel(Gmagick::CHANNEL_OPACITY);
+                // Negate opacity channel
+                $alpha_channel = new Gmagick();
+                $alpha_channel->newimage($wpx, $hpx, "#FFFFFF", "png");
+                $alpha_channel->compositeimage($imga, Gmagick::COMPOSITE_DIFFERENCE, 0, 0);
+                $alpha_channel->separateimagechannel(Gmagick::CHANNEL_RED);
+                $alpha_channel->writeimage($tempfile_alpha);
+                // Make opaque image
+                $color_channels = new Gmagick();
+                $color_channels->newimage($wpx, $hpx, "#FFFFFF", "png");
+                $color_channels->compositeimage($img, Gmagick::COMPOSITE_COPYRED, 0, 0);
+                $color_channels->compositeimage($img, Gmagick::COMPOSITE_COPYGREEN, 0, 0);
+                $color_channels->compositeimage($img, Gmagick::COMPOSITE_COPYBLUE, 0, 0);
+                $color_channels->writeimage($tempfile_plain);
+                $parsed = true;
+            } catch (Exception $e) {
+                // GraphicsMagick fails, try with GD
+                $parse_error = 'GraphicsMagick library error: '.$e->getMessage();
+            }
+        }
 		// ImageMagick extension
 		if (($parsed === false) AND extension_loaded('imagick')) {
 			try {
